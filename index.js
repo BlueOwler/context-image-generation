@@ -67,6 +67,65 @@ const defaultSettings = {
 
 const MAX_GALLERY_SIZE = 50;
 
+// --- LinkAPI ChatGPT (gpt-image) helpers (pure, text-prompt only) ---
+
+function isOpenAiImageModel(model) {
+    return /^(gpt-image|dall-e)/i.test(model || '');
+}
+
+function mapAspectRatioToSize(aspectRatio) {
+    switch (aspectRatio) {
+        case '3:4':
+        case '9:16':
+            return '1024x1536';
+        case '4:3':
+        case '16:9':
+            return '1536x1024';
+        case '1:1':
+        default:
+            return '1024x1024';
+    }
+}
+
+function extractPromptText(messages) {
+    const parts = [];
+    for (const msg of messages || []) {
+        if (Array.isArray(msg.content)) {
+            for (const part of msg.content) {
+                if (part && part.type === 'text' && part.text) {
+                    parts.push(part.text);
+                }
+            }
+        } else if (typeof msg.content === 'string' && msg.content) {
+            parts.push(msg.content);
+        }
+    }
+    return parts.join('\n\n');
+}
+
+function parseImagesResponse(json) {
+    const item = json && Array.isArray(json.data) ? json.data[0] : null;
+    return { b64: (item && item.b64_json) || null, url: (item && item.url) || null };
+}
+
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+// Dev aid: reach the pure helpers from the DevTools console for verification.
+window.cigDebug = Object.assign(window.cigDebug || {}, {
+    isOpenAiImageModel,
+    mapAspectRatioToSize,
+    extractPromptText,
+    parseImagesResponse,
+});
+
 function updateModelDropdown() {
     const settings = extension_settings[extensionName];
     const provider = settings.provider || 'makersuite';
