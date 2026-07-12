@@ -118,12 +118,47 @@ function arrayBufferToBase64(buf) {
     return btoa(binary);
 }
 
+async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https://linkapi.ai' }) {
+    const response = await fetch(`${host}/v1/images/generations`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey || ''}`,
+        },
+        body: JSON.stringify({ model, prompt, n: 1, size, response_format: 'b64_json' }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[${extensionName}] LinkAPI image error:`, errorText);
+        let message = `API Error: ${response.status}`;
+        try {
+            const j = JSON.parse(errorText);
+            message = j.error?.message || j.message || message;
+        } catch (e) { /* keep default */ }
+        throw new Error(message);
+    }
+
+    const json = await response.json();
+    const { b64, url } = parseImagesResponse(json);
+    if (b64) {
+        return { imageData: b64, mimeType: 'image/png' };
+    }
+    if (url) {
+        const imgResp = await fetch(url);
+        const buf = await imgResp.arrayBuffer();
+        return { imageData: arrayBufferToBase64(buf), mimeType: 'image/png' };
+    }
+    throw new Error('No image was returned by the API');
+}
+
 // Dev aid: reach the pure helpers from the DevTools console for verification.
 window.cigDebug = Object.assign(window.cigDebug || {}, {
     isOpenAiImageModel,
     mapAspectRatioToSize,
     extractPromptText,
     parseImagesResponse,
+    requestLinkApiImage,
 });
 
 function updateModelDropdown() {
