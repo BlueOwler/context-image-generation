@@ -156,6 +156,31 @@ async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https:
     throw new Error('No image was returned by the API');
 }
 
+async function fetchLinkApiModels() {
+    const settings = extension_settings[extensionName];
+    const key = settings.linkapi_key;
+    if (!key) {
+        toastr.warning('Enter a LinkAPI key first.', 'Context Image Generation');
+        return;
+    }
+    try {
+        const resp = await fetch('https://linkapi.ai/v1/models', {
+            headers: { 'Authorization': `Bearer ${key}` },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        const ids = (json.data || [])
+            .map(m => m.id)
+            .filter(id => /^(gpt-image|dall-e)/i.test(id));
+        fetchedLinkApiModels = ids.map(id => ({ id, name: id }));
+        updateModelDropdown();
+        toastr.success(`Loaded ${ids.length} image model(s).`, 'Context Image Generation');
+    } catch (e) {
+        console.error(`[${extensionName}] Fetch models failed:`, e);
+        toastr.error(`Failed to fetch models: ${e.message}`, 'Context Image Generation');
+    }
+}
+
 // Dev aid: reach the pure helpers from the DevTools console for verification.
 window.cigDebug = Object.assign(window.cigDebug || {}, {
     isOpenAiImageModel,
@@ -862,6 +887,8 @@ jQuery(async () => {
         extension_settings[extensionName].linkapi_key = $(this).val();
         saveSettingsDebounced();
     });
+
+    $('#cig_fetch_linkapi_models').on('click', fetchLinkApiModels);
 
     $('#cig_model').on('change', function () {
         extension_settings[extensionName].model = $(this).val();
