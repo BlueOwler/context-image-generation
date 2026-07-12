@@ -40,6 +40,7 @@ const PROVIDER_MODELS = {
         flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (LinkAPI)' },
         flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (LinkAPI)' },
         pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (LinkAPI)' },
+        gptimage: { id: 'gpt-image-2-c', name: 'ChatGPT Image 🖼️ (gpt-image-2-c)' },
     },
     openrouter: {
         flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
@@ -66,6 +67,9 @@ const defaultSettings = {
 };
 
 const MAX_GALLERY_SIZE = 50;
+
+// Runtime-only list of image models fetched from LinkAPI /v1/models (not persisted).
+let fetchedLinkApiModels = [];
 
 // --- LinkAPI ChatGPT (gpt-image) helpers (pure, text-prompt only) ---
 
@@ -169,13 +173,26 @@ function updateModelDropdown() {
     const $modelSelect = $('#cig_model');
     $modelSelect.empty();
 
-    $modelSelect.append(`<option value="${models.flash.id}">${models.flash.name}</option>`);
-    $modelSelect.append(`<option value="${models.flash2.id}">${models.flash2.name}</option>`);
-    $modelSelect.append(`<option value="${models.pro.id}">${models.pro.name}</option>`);
+    for (const m of Object.values(models)) {
+        $modelSelect.append(`<option value="${m.id}">${m.name}</option>`);
+    }
 
-    // Try to maintain model type selection when switching providers
+    // Merge dynamically fetched LinkAPI image models (runtime only).
+    if (provider === 'linkapi' && Array.isArray(fetchedLinkApiModels)) {
+        for (const m of fetchedLinkApiModels) {
+            if (!$modelSelect.find(`option[value="${m.id}"]`).length) {
+                $modelSelect.append(`<option value="${m.id}">${m.name}</option>`);
+            }
+        }
+    }
+
+    // Keep the exact current model if it is still available; otherwise fall back
+    // to the closest type match (preserves cross-provider switching behaviour).
+    const optionValues = $modelSelect.find('option').map((i, o) => o.value).get();
     const currentModel = settings.model || '';
-    if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
+    if (optionValues.includes(currentModel)) {
+        $modelSelect.val(currentModel);
+    } else if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
         $modelSelect.val(models.pro.id);
         settings.model = models.pro.id;
     } else if (currentModel.includes('3.1') || currentModel.includes('3-1')) {
@@ -186,7 +203,6 @@ function updateModelDropdown() {
         settings.model = models.flash.id;
     }
 
-    // Update size dropdown based on selected model
     if (typeof toggleImageSizeVisibility === 'function') {
         toggleImageSizeVisibility();
     }
@@ -450,6 +466,17 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const isFlash2 = /gemini-3\.1/.test(settings.model);
     const selectedProvider = settings.provider || 'makersuite';
     const isLinkApi = selectedProvider === 'linkapi';
+
+    // ChatGPT (gpt-image) via LinkAPI: direct fetch, text prompt only.
+    if (isLinkApi && isOpenAiImageModel(settings.model)) {
+        console.log(`[${extensionName}] Generating via LinkAPI images endpoint, model:`, settings.model);
+        return await requestLinkApiImage({
+            apiKey: settings.linkapi_key,
+            model: settings.model,
+            prompt: extractPromptText(messages),
+            size: mapAspectRatioToSize(settings.aspect_ratio),
+        });
+    }
 
     const requestBody = {
         chat_completion_source: isLinkApi ? 'makersuite' : selectedProvider,
