@@ -2,6 +2,12 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
+> **Fork notice** — This is a fork of [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation) by **Elouann**. It was forked to add **LinkAPI provider support** (routing image generation through LinkAPI's Gemini-compatible endpoint) without changing your active SillyTavern Chat Completion profile. All credit for the original extension goes to Elouann; the original is released into the public domain under The Unlicense.
+
+## What's New in this Fork (v1.4.0)
+
+- **LinkAPI Provider** - Added LinkAPI as a provider option. Enter a LinkAPI key (used only for image generation) and requests are routed through `https://api.linkapi.ai` without touching your active Chat Completion proxy settings.
+
 ## What's New in v1.3.3
 
 - **Auto Generate** - Automatically generate images when messages are received (Off, Bot messages, or All messages)
@@ -44,7 +50,7 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 > ⚠️ **Important:** A Paid Tier of AiStudio or OpenRouter credits is needed to generate pictures. Free version will not work.
 
 - SillyTavern (latest staging branch)
-- Google AI Studio API key OR OpenRouter API key configured in SillyTavern
+- Google AI Studio API key OR OpenRouter API key configured in SillyTavern, OR a LinkAPI key entered in this extension's settings
 - A Gemini model with image generation capability:
   - `Nano Banana 🍌` (Flash) - Faster, cheaper (~$0.04/image)
   - `Nano Banana 2 🍌` (Flash) - Gemini 3.1 Flash
@@ -81,7 +87,8 @@ Aliases: `/proimg`, `/geminiimg`
 
 | Setting | Description |
 |---------|-------------|
-| Provider | Google AI Studio or OpenRouter |
+| Provider | Google AI Studio, LinkAPI, or OpenRouter |
+| LinkAPI Key | Required when Provider is LinkAPI; used only for image generation |
 | Model | Flash (~$0.04), Flash 2 (Gemini 3.1), or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
 | Image Size | Pro: Default, 1K, 2K, 4K <br> Flash 2: Default, 512px, 1K, 2K, 4K |
@@ -107,4 +114,6 @@ This project is released into the public domain under [The Unlicense](LICENSE). 
 
 ## Credits
 
-Created for use with [SillyTavern](https://github.com/SillyTavern/SillyTavern).
+- Original extension by **Elouann** — [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation).
+- LinkAPI provider support added in this fork by **BlueOwler**.
+- Created for use with [SillyTavern](https://github.com/SillyTavern/SillyTavern).

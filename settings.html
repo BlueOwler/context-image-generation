@@ -20,9 +20,17 @@
                     <label for="cig_provider">Provider</label>
                     <select id="cig_provider" class="cig-setting">
                         <option value="makersuite">Google AI Studio</option>
+                        <option value="linkapi">LinkAPI</option>
                         <option value="openrouter">OpenRouter</option>
                     </select>
                 </div>
+            </div>
+
+            <!-- LinkAPI Settings -->
+            <div id="cig_linkapi_container" class="flex-container flexFlowColumn" style="display: none;">
+                <label for="cig_linkapi_key">LinkAPI Key</label>
+                <input id="cig_linkapi_key" class="cig-setting text_pole" type="password" placeholder="sk-..." />
+                <small>Used only for image generation. Gemini proxy URL: https://api.linkapi.ai (do not add /v1).</small>
             </div>
 
             <!-- Model Selection -->

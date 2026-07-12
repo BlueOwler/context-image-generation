@@ -36,6 +36,11 @@ const PROVIDER_MODELS = {
         flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (Flash)' },
         pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (~$0.14/img)' },
     },
+    linkapi: {
+        flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (LinkAPI)' },
+        flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (LinkAPI)' },
+        pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (LinkAPI)' },
+    },
     openrouter: {
         flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
         flash2: { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (OpenRouter)' },
@@ -46,6 +51,7 @@ const PROVIDER_MODELS = {
 const defaultSettings = {
     provider: 'makersuite',
     model: 'gemini-2.5-flash-image',
+    linkapi_key: '',
     aspect_ratio: '1:1',
     image_size: '',
     thinking_level: 'auto',
@@ -64,7 +70,7 @@ const MAX_GALLERY_SIZE = 50;
 function updateModelDropdown() {
     const settings = extension_settings[extensionName];
     const provider = settings.provider || 'makersuite';
-    const models = PROVIDER_MODELS[provider];
+    const models = PROVIDER_MODELS[provider] || PROVIDER_MODELS.makersuite;
 
     const $modelSelect = $('#cig_model');
     $modelSelect.empty();
@@ -104,6 +110,7 @@ async function loadSettings() {
     $('#cig_provider').val(extension_settings[extensionName].provider);
     updateModelDropdown();
     $('#cig_model').val(extension_settings[extensionName].model);
+    $('#cig_linkapi_key').val(extension_settings[extensionName].linkapi_key);
     $('#cig_aspect_ratio').val(extension_settings[extensionName].aspect_ratio);
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
     $('#cig_thinking_level').val(extension_settings[extensionName].thinking_level);
@@ -116,7 +123,13 @@ async function loadSettings() {
     $('#cig_system_instruction').val(extension_settings[extensionName].system_instruction);
 
     toggleImageSizeVisibility();
+    toggleProviderSpecificSettings();
     renderGallery();
+}
+
+function toggleProviderSpecificSettings() {
+    const provider = extension_settings[extensionName].provider || 'makersuite';
+    $('#cig_linkapi_container').toggle(provider === 'linkapi');
 }
 
 function toggleImageSizeVisibility() {
@@ -341,9 +354,11 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const messages = await buildMessages(prompt, sender, messageId);
 
     const isFlash2 = /gemini-3\.1/.test(settings.model);
+    const selectedProvider = settings.provider || 'makersuite';
+    const isLinkApi = selectedProvider === 'linkapi';
 
     const requestBody = {
-        chat_completion_source: settings.provider || 'makersuite',
+        chat_completion_source: isLinkApi ? 'makersuite' : selectedProvider,
         model: settings.model,
         messages: messages,
         max_tokens: 8192,
@@ -352,9 +367,9 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         request_image_aspect_ratio: settings.aspect_ratio || '1:1',
         request_image_resolution: settings.image_size || undefined,
         stream: false,
-        // Proxy support - uses configured reverse proxy from Chat Completion settings
-        reverse_proxy: oai_settings.reverse_proxy || '',
-        proxy_password: oai_settings.proxy_password || '',
+        // LinkAPI uses the Gemini-compatible proxy endpoint without changing the active ST chat profile.
+        reverse_proxy: isLinkApi ? 'https://api.linkapi.ai' : oai_settings.reverse_proxy || '',
+        proxy_password: isLinkApi ? settings.linkapi_key || '' : oai_settings.proxy_password || '',
     };
 
     // Flash 2 specific options
@@ -717,6 +732,12 @@ jQuery(async () => {
         extension_settings[extensionName].provider = $(this).val();
         updateModelDropdown();
         toggleImageSizeVisibility();
+        toggleProviderSpecificSettings();
+        saveSettingsDebounced();
+    });
+
+    $('#cig_linkapi_key').on('input', function () {
+        extension_settings[extensionName].linkapi_key = $(this).val();
         saveSettingsDebounced();
     });
 
