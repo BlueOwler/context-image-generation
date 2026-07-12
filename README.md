@@ -4,6 +4,14 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 > **Fork notice** — This is a fork of [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation) by **Elouann**. It was forked to add **LinkAPI provider support** (routing image generation through LinkAPI's Gemini-compatible endpoint) without changing your active SillyTavern Chat Completion profile. All credit for the original extension goes to Elouann; the original is released into the public domain under The Unlicense.
 
+## What's New in this Fork (v1.5.0)
+
+- **ChatGPT image models** - Generate images with OpenAI `gpt-image` models
+  (e.g. `gpt-image-2-c`) through your LinkAPI account. Text-prompt only
+  (character/user descriptions are included; avatar image references are not
+  supported for these models). Optional "Fetch models" button lists the
+  `gpt-image*`/`dall-e*` models available on your key.
+
 ## What's New in this Fork (v1.4.0)
 
 - **LinkAPI Provider** - Added LinkAPI as a provider option. Enter a LinkAPI key (used only for image generation) and requests are routed through `https://api.linkapi.ai` without touching your active Chat Completion proxy settings.
