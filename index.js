@@ -249,6 +249,7 @@ function toggleImageSizeVisibility() {
     const isSizeSupported = isProModel || isFlash2Model;
     $('#cig_image_size_container').toggle(isSizeSupported);
     $('#cig_flash2_options').toggle(isFlash2Model);
+    $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
 
     if (isSizeSupported) {
         updateSizeDropdown(model, isFlash2Model);
