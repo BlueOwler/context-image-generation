@@ -123,7 +123,12 @@ function arrayBufferToBase64(buf) {
 }
 
 async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https://linkapi.ai' }) {
-    const response = await fetch(`${host}/v1/images/generations`, {
+    const url = `${host}/v1/images/generations`;
+    // Direct browser -> LinkAPI request (does NOT pass through the ST server, so
+    // it appears in the browser console/Network tab, not the ST server terminal).
+    console.log(`[${extensionName}] LinkAPI image request:`, { url, model, size, promptLength: (prompt || '').length });
+
+    const response = await fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -134,7 +139,7 @@ async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https:
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[${extensionName}] LinkAPI image error:`, errorText);
+        console.error(`[${extensionName}] LinkAPI image error (${response.status}):`, errorText);
         let message = `API Error: ${response.status}`;
         try {
             const j = JSON.parse(errorText);
@@ -144,12 +149,14 @@ async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https:
     }
 
     const json = await response.json();
-    const { b64, url } = parseImagesResponse(json);
+    const { b64, url: imageUrl } = parseImagesResponse(json);
     if (b64) {
+        console.log(`[${extensionName}] LinkAPI image received (b64_json, model: ${model})`);
         return { imageData: b64, mimeType: 'image/png' };
     }
-    if (url) {
-        const imgResp = await fetch(url);
+    if (imageUrl) {
+        console.log(`[${extensionName}] LinkAPI image received (url, fetching bytes, model: ${model})`);
+        const imgResp = await fetch(imageUrl);
         const buf = await imgResp.arrayBuffer();
         return { imageData: arrayBufferToBase64(buf), mimeType: 'image/png' };
     }
