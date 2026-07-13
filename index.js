@@ -486,13 +486,15 @@ async function buildMessages(prompt, sender = null, messageId = null) {
     }
 
     if (settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
-        const lastImage = settings.gallery[0];
-        console.log(`[${extensionName}] Adding previous generated image as reference`);
-        contentParts.push({ type: 'text', text: '[Reference: Previously generated image for style consistency]' });
-        contentParts.push({
-            type: 'image_url',
-            image_url: { url: `data:image/png;base64,${lastImage.imageData}` },
-        });
+        const dataUrl = await galleryItemToDataUrl(settings.gallery[0]);
+        if (dataUrl) {
+            console.log(`[${extensionName}] Adding previous generated image as reference`);
+            contentParts.push({ type: 'text', text: '[Reference: Previously generated image for style consistency]' });
+            contentParts.push({
+                type: 'image_url',
+                image_url: { url: dataUrl },
+            });
+        }
     }
 
     if (settings.use_char_avatar) {
@@ -608,15 +610,54 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     throw new Error('No image was returned by the API');
 }
 
-function addToGallery(imageData, prompt, messageId = null) {
+// Resolve the <img> src for a gallery item. Supports new file-based items ({url})
+// and legacy base64 items ({imageData}) so pre-existing galleries keep working.
+function galleryItemSrc(item) {
+    if (item.url) return item.url;
+    if (item.imageData) return `data:image/png;base64,${item.imageData}`;
+    return '';
+}
+
+// Get a base64 data URL for a gallery item (used for the "previous image"
+// reference, which must be sent inline). Fetches the file for file-based items.
+async function galleryItemToDataUrl(item) {
+    if (!item) return null;
+    if (item.imageData) return `data:image/png;base64,${item.imageData}`;
+    if (item.url) {
+        try {
+            const resp = await fetch(item.url);
+            if (!resp.ok) return null;
+            const blob = await resp.blob();
+            return await getBase64Async(blob);
+        } catch (error) {
+            console.warn(`[${extensionName}] Failed to load previous image for reference:`, error);
+            return null;
+        }
+    }
+    return null;
+}
+
+async function addToGallery(imageData, prompt, messageId = null, existingPath = null) {
     const settings = extension_settings[extensionName];
 
     if (!settings.gallery) {
         settings.gallery = [];
     }
 
+    // Store the image as a file and keep only its path + metadata in settings.json
+    // (never base64). Reuse an already-saved file path when the caller has one.
+    let url = existingPath;
+    if (!url) {
+        try {
+            url = await saveBase64AsFile(imageData, extensionName, `cig_gallery_${Date.now()}`, 'png');
+        } catch (error) {
+            console.error(`[${extensionName}] Failed to save gallery image:`, error);
+            return;
+        }
+    }
+
     settings.gallery.unshift({
-        imageData: imageData,
+        url: url,
         prompt: prompt.substring(0, 200),
         timestamp: Date.now(),
         messageId: messageId,
@@ -645,16 +686,17 @@ function renderGallery() {
 
     emptyMsg.hide();
 
+    // Build via DOM construction (not string interpolation) so prompt text can't
+    // break the markup or inject HTML.
     for (let i = 0; i < gallery.length; i++) {
         const item = gallery[i];
-        const thumb = $(`
-            <div class="cig_gallery_item" data-index="${i}" title="${item.prompt}">
-                <img src="data:image/png;base64,${item.imageData}" />
-                <div class="cig_gallery_item_overlay">
-                    <i class="fa-solid fa-trash cig_gallery_delete" data-index="${i}"></i>
-                </div>
-            </div>
-        `);
+        const thumb = $('<div class="cig_gallery_item"></div>')
+            .attr('data-index', i)
+            .attr('title', item.prompt || '');
+        $('<img>').attr('src', galleryItemSrc(item)).appendTo(thumb);
+        $('<div class="cig_gallery_item_overlay"></div>')
+            .append($('<i class="fa-solid fa-trash cig_gallery_delete"></i>').attr('data-index', i))
+            .appendTo(thumb);
         container.append(thumb);
     }
 }
@@ -683,7 +725,7 @@ async function generateImage() {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
             $('#cig_preview_image').attr('src', imageDataUrl);
             $('#cig_preview_container').show();
-            addToGallery(result.imageData, lastMsg.text, null);
+            await addToGallery(result.imageData, lastMsg.text, null);
         }
 
     } catch (error) {
@@ -766,7 +808,7 @@ async function attachGeneratedImage(message, messageElement, prompt, sender, mes
 
     appendMediaToMessage(message, messageElement, SCROLL_BEHAVIOR.KEEP);
     await saveChatConditional();
-    addToGallery(result.imageData, prompt, messageId);
+    await addToGallery(result.imageData, prompt, messageId, filePath);
     return true;
 }
 
@@ -841,7 +883,7 @@ async function slashCommandHandler(args, prompt) {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
             $('#cig_preview_image').attr('src', imageDataUrl);
             $('#cig_preview_container').show();
-            addToGallery(result.imageData, trimmedPrompt, null);
+            await addToGallery(result.imageData, trimmedPrompt, null);
             return imageDataUrl;
         }
     } catch (error) {
@@ -901,20 +943,23 @@ function viewGalleryImage(index) {
     const item = settings.gallery[index];
     if (!item) return;
 
-    const imageUrl = `data:image/png;base64,${item.imageData}`;
-
     const popup = $(`
         <div class="cig_popup_overlay">
             <div class="cig_popup">
                 <div class="cig_popup_header">
-                    <span>${new Date(item.timestamp).toLocaleString()}</span>
+                    <span></span>
                     <i class="fa-solid fa-xmark cig_popup_close"></i>
                 </div>
-                <img src="${imageUrl}" />
-                <div class="cig_popup_prompt">${item.prompt}</div>
+                <img />
+                <div class="cig_popup_prompt"></div>
             </div>
         </div>
     `);
+
+    // Set text/attributes via jQuery so the prompt is escaped, never injected.
+    popup.find('.cig_popup_header span').text(new Date(item.timestamp).toLocaleString());
+    popup.find('.cig_popup img').attr('src', galleryItemSrc(item));
+    popup.find('.cig_popup_prompt').text(item.prompt || '');
 
     popup.on('click', '.cig_popup_close, .cig_popup_overlay', function (e) {
         if (e.target === this || $(e.target).hasClass('cig_popup_close')) {
