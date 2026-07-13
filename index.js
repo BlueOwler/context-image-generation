@@ -786,7 +786,7 @@ async function onCigImageSwiped({ message, element, direction }) {
     const current = media[idx];
     if (!current?.url || !current.url.includes(extensionName)) return; // only our own images
 
-    const messageId = Number(element.attr('mesid'));
+    const messageId = Number(element.attr('mesid') ?? element.closest('.mes').attr('mesid'));
     const context = getContext();
     const charName = context.name2 || 'Character';
     const userName = name1 || 'User';
