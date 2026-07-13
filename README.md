@@ -4,6 +4,15 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 > **Fork notice** — This is a fork of [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation) by **Elouann**. It was forked to add **LinkAPI provider support** (routing image generation through LinkAPI's Gemini-compatible endpoint) without changing your active SillyTavern Chat Completion profile. All credit for the original extension goes to Elouann; the original is released into the public domain under The Unlicense.
 
+## What's New in this Fork (v1.7.0)
+
+- **Lighter gallery** - Gallery images are now stored as files (only paths are
+  kept in settings), instead of full-resolution base64 embedded in
+  `settings.json`. This dramatically shrinks the settings file and speeds up
+  saves and startup. Existing base64 gallery items keep displaying; new ones use
+  files. Inline chat images are unaffected (they already used files). Prompt text
+  in the gallery is now safely escaped.
+
 ## What's New in this Fork (v1.6.0)
 
 - **Separate avatar reference toggles** - "Use avatar references" is now split into
