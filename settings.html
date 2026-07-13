@@ -109,9 +109,13 @@
 
             <!-- Reference Options -->
             <div class="flex-container flexFlowColumn">
-                <label class="checkbox_label" title="Include user and character avatars as reference images">
-                    <input type="checkbox" id="cig_use_avatars" class="cig-setting" />
-                    <span>Use avatar references</span>
+                <label class="checkbox_label" title="Include the character avatar as a reference image">
+                    <input type="checkbox" id="cig_use_char_avatar" class="cig-setting" />
+                    <span>Use character avatar as reference</span>
+                </label>
+                <label class="checkbox_label" title="Include your persona avatar as a reference image">
+                    <input type="checkbox" id="cig_use_user_avatar" class="cig-setting" />
+                    <span>Use your (persona) avatar as reference</span>
                 </label>
                 <label class="checkbox_label" title="Include character and persona descriptions in the prompt">
                     <input type="checkbox" id="cig_include_descriptions" class="cig-setting" />
@@ -120,6 +124,10 @@
                 <label class="checkbox_label" title="Use the last generated image as a style reference">
                     <input type="checkbox" id="cig_use_previous_image" class="cig-setting" />
                     <span>Use previous image as reference</span>
+                </label>
+                <label class="checkbox_label" title="Swipe right past the last generated image on a message to create a new variation">
+                    <input type="checkbox" id="cig_regenerate_on_swipe" class="cig-setting" />
+                    <span>Regenerate on image swipe</span>
                 </label>
             </div>
 

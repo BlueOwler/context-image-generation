@@ -21,7 +21,7 @@ import { getContext, extension_settings } from '../../../extensions.js';
 import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
-import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR } from '../../../constants.js';
+import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTION } from '../../../constants.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
@@ -58,7 +58,9 @@ const defaultSettings = {
     thinking_level: 'auto',
     use_google_search: false,
     auto_generate: 'off',
-    use_avatars: false,
+    use_char_avatar: false,
+    use_user_avatar: false,
+    regenerate_on_swipe: false,
     include_descriptions: false,
     use_previous_image: false,
     message_depth: 1,
@@ -264,6 +266,17 @@ async function loadSettings() {
         }
     }
 
+    // Migrate the legacy single "use_avatars" toggle to the two independent toggles.
+    // Runs once: after migrating, the old key is deleted so it can't override later choices.
+    const cigSettings = extension_settings[extensionName];
+    if (cigSettings.use_avatars !== undefined) {
+        if (cigSettings.use_avatars === true) {
+            cigSettings.use_char_avatar = true;
+            cigSettings.use_user_avatar = true;
+        }
+        delete cigSettings.use_avatars;
+    }
+
     $('#cig_provider').val(extension_settings[extensionName].provider);
     updateModelDropdown();
     $('#cig_model').val(extension_settings[extensionName].model);
@@ -272,9 +285,11 @@ async function loadSettings() {
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
     $('#cig_thinking_level').val(extension_settings[extensionName].thinking_level);
     $('#cig_use_google_search').prop('checked', extension_settings[extensionName].use_google_search);
-    $('#cig_use_avatars').prop('checked', extension_settings[extensionName].use_avatars);
+    $('#cig_use_char_avatar').prop('checked', extension_settings[extensionName].use_char_avatar);
+    $('#cig_use_user_avatar').prop('checked', extension_settings[extensionName].use_user_avatar);
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
     $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
+    $('#cig_regenerate_on_swipe').prop('checked', extension_settings[extensionName].regenerate_on_swipe);
     $('#cig_auto_generate').val(extension_settings[extensionName].auto_generate);
     $('#cig_message_depth').val(extension_settings[extensionName].message_depth);
     $('#cig_system_instruction').val(extension_settings[extensionName].system_instruction);
@@ -480,10 +495,8 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         });
     }
 
-    if (settings.use_avatars) {
-        const userAvatarData = await getUserAvatar();
+    if (settings.use_char_avatar) {
         const charAvatarData = await getCharacterAvatar();
-
         if (charAvatarData) {
             console.log(`[${extensionName}] Adding character avatar for: ${charAvatarData.name}`);
             contentParts.push({ type: 'text', text: `[Reference image for {{char}}]` });
@@ -492,7 +505,10 @@ async function buildMessages(prompt, sender = null, messageId = null) {
                 image_url: { url: `data:${charAvatarData.mimeType};base64,${charAvatarData.data}` },
             });
         }
+    }
 
+    if (settings.use_user_avatar) {
+        const userAvatarData = await getUserAvatar();
         if (userAvatarData) {
             console.log(`[${extensionName}] Adding user avatar for: ${userAvatarData.name}`);
             contentParts.push({ type: 'text', text: `[Reference image for {{user}}]` });
@@ -710,46 +726,81 @@ async function cigMessageButton($icon) {
     $icon.removeClass('fa-wand-magic-sparkles').addClass('fa-spinner fa-spin');
 
     try {
-        const result = await generateImageFromPrompt(prompt, sender, messageId);
-
-        if (result) {
-            const fileName = `cig_${Date.now()}`;
-            const filePath = await saveBase64AsFile(result.imageData, extensionName, fileName, 'png');
-            console.log(`[${extensionName}] Image saved to:`, filePath);
-
-            if (!message.extra || typeof message.extra !== 'object') {
-                message.extra = {};
-            }
-
-            if (!Array.isArray(message.extra.media)) {
-                message.extra.media = [];
-            }
-
-            if (!message.extra.media_display) {
-                message.extra.media_display = MEDIA_DISPLAY.GALLERY;
-            }
-
-            const mediaAttachment = {
-                url: filePath,
-                type: MEDIA_TYPE.IMAGE,
-                title: prompt.substring(0, 100),
-                source: MEDIA_SOURCE.GENERATED,
-            };
-
-            message.extra.media.push(mediaAttachment);
-            message.extra.media_index = message.extra.media.length - 1;
-            message.extra.inline_image = true;
-
-            appendMediaToMessage(message, messageElement, SCROLL_BEHAVIOR.KEEP);
-            await saveChatConditional();
-            addToGallery(result.imageData, prompt, messageId);
-        }
-
+        await attachGeneratedImage(message, messageElement, prompt, sender, messageId);
     } catch (error) {
         console.error(`[${extensionName}] Message generation error:`, error);
         toastr.error(`Failed to generate: ${error.message}`, 'Context Image Generation');
     } finally {
         $icon.removeClass('cig_busy fa-spinner fa-spin').addClass('fa-wand-magic-sparkles');
+    }
+}
+
+// Generate an image for a message and attach it to that message's media array.
+// Shared by the wand button and the swipe-to-regenerate handler.
+async function attachGeneratedImage(message, messageElement, prompt, sender, messageId) {
+    const result = await generateImageFromPrompt(prompt, sender, messageId);
+    if (!result) return false;
+
+    const fileName = `cig_${Date.now()}`;
+    const filePath = await saveBase64AsFile(result.imageData, extensionName, fileName, 'png');
+    console.log(`[${extensionName}] Image saved to:`, filePath);
+
+    if (!message.extra || typeof message.extra !== 'object') {
+        message.extra = {};
+    }
+    if (!Array.isArray(message.extra.media)) {
+        message.extra.media = [];
+    }
+    if (!message.extra.media_display) {
+        message.extra.media_display = MEDIA_DISPLAY.GALLERY;
+    }
+
+    message.extra.media.push({
+        url: filePath,
+        type: MEDIA_TYPE.IMAGE,
+        title: prompt.substring(0, 100),
+        source: MEDIA_SOURCE.GENERATED,
+    });
+    message.extra.media_index = message.extra.media.length - 1;
+    message.extra.inline_image = true;
+
+    appendMediaToMessage(message, messageElement, SCROLL_BEHAVIOR.KEEP);
+    await saveChatConditional();
+    addToGallery(result.imageData, prompt, messageId);
+    return true;
+}
+
+// Regenerate a fresh variation when the user swipes RIGHT past the last image of
+// one of OUR generated images. Opt-in via the regenerate_on_swipe setting.
+async function onCigImageSwiped({ message, element, direction }) {
+    const settings = extension_settings[extensionName];
+    if (!settings.regenerate_on_swipe) return;
+    if (direction !== SWIPE_DIRECTION.RIGHT) return;
+
+    const media = message?.extra?.media;
+    if (!Array.isArray(media) || media.length === 0) return;
+
+    const idx = message.extra.media_index ?? (media.length - 1);
+    if (idx !== media.length - 1) return; // only an overswipe past the last image
+
+    const current = media[idx];
+    if (!current?.url || !current.url.includes(extensionName)) return; // only our own images
+
+    const messageId = Number(element.attr('mesid') ?? element.closest('.mes').attr('mesid'));
+    const context = getContext();
+    const charName = context.name2 || 'Character';
+    const userName = name1 || 'User';
+    const sender = message.is_user ? `{{user}} (${userName})` : `{{char}} (${charName})`;
+    const messageMedia = element.find('.mes_img, .mes_video');
+
+    try {
+        messageMedia.addClass('fa-fade');
+        await attachGeneratedImage(message, element, message.mes, sender, messageId);
+    } catch (error) {
+        console.error(`[${extensionName}] Swipe-regenerate error:`, error);
+        toastr.error(`Failed to regenerate: ${error.message}`, 'Context Image Generation');
+    } finally {
+        messageMedia.removeClass('fa-fade');
     }
 }
 
@@ -938,8 +989,18 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
-    $('#cig_use_avatars').on('change', function () {
-        extension_settings[extensionName].use_avatars = $(this).prop('checked');
+    $('#cig_use_char_avatar').on('change', function () {
+        extension_settings[extensionName].use_char_avatar = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#cig_use_user_avatar').on('change', function () {
+        extension_settings[extensionName].use_user_avatar = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#cig_regenerate_on_swipe').on('change', function () {
+        extension_settings[extensionName].regenerate_on_swipe = $(this).prop('checked');
         saveSettingsDebounced();
     });
 
@@ -1010,6 +1071,8 @@ jQuery(async () => {
     eventSource.on(event_types.CHAT_CREATED, () => {
         setTimeout(injectAllMessageButtons, 100);
     });
+
+    eventSource.on(event_types.IMAGE_SWIPED, onCigImageSwiped);
 
     setTimeout(injectAllMessageButtons, 500);
 

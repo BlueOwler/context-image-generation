@@ -4,6 +4,15 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 > **Fork notice** — This is a fork of [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation) by **Elouann**. It was forked to add **LinkAPI provider support** (routing image generation through LinkAPI's Gemini-compatible endpoint) without changing your active SillyTavern Chat Completion profile. All credit for the original extension goes to Elouann; the original is released into the public domain under The Unlicense.
 
+## What's New in this Fork (v1.6.0)
+
+- **Separate avatar reference toggles** - "Use avatar references" is now split into
+  two independent options: **Use character avatar** and **Use your (persona)
+  avatar**. Send either, both, or neither as reference images. (Existing users who
+  had avatars on keep both enabled.)
+- **Regenerate on image swipe** (opt-in) - Swipe right past the last generated
+  image on a message to create a fresh variation, without re-opening the panel.
+
 ## What's New in this Fork (v1.5.0)
 
 - **ChatGPT image models** - Generate images with OpenAI `gpt-image` models
@@ -104,7 +113,9 @@ Aliases: `/proimg`, `/geminiimg`
 | Google Search | Flash 2 only: Enable web search for references |
 | Auto Generate | Off, Bot messages, or All messages |
 | Message Depth | Number of messages to include as context (1-10) |
-| Use Avatar References | Include character/user avatars as visual references |
+| Use Character Avatar | Include the character avatar as a visual reference |
+| Use Persona Avatar | Include your persona avatar as a visual reference |
+| Regenerate on Image Swipe | Opt-in: swipe right past the last generated image to make a new variation |
 | Include Descriptions | Add character descriptions to the prompt |
 | Use Previous Image | Use last generated image as style reference |
 | System Instruction | Customize instructions for the image model |
