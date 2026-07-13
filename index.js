@@ -40,6 +40,7 @@ const PROVIDER_MODELS = {
         flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (LinkAPI)' },
         flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (LinkAPI)' },
         pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (LinkAPI)' },
+        gptimage: { id: 'gpt-image-2-c', name: 'ChatGPT Image 🖼️ (gpt-image-2-c)' },
     },
     openrouter: {
         flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
@@ -67,6 +68,135 @@ const defaultSettings = {
 
 const MAX_GALLERY_SIZE = 50;
 
+// Runtime-only list of image models fetched from LinkAPI /v1/models (not persisted).
+let fetchedLinkApiModels = [];
+
+// --- LinkAPI ChatGPT (gpt-image) helpers (pure, text-prompt only) ---
+
+function isOpenAiImageModel(model) {
+    return /^(gpt-image|dall-e)/i.test(model || '');
+}
+
+function mapAspectRatioToSize(aspectRatio) {
+    switch (aspectRatio) {
+        case '3:4':
+        case '9:16':
+            return '1024x1536';
+        case '4:3':
+        case '16:9':
+            return '1536x1024';
+        case '1:1':
+        default:
+            return '1024x1024';
+    }
+}
+
+function extractPromptText(messages) {
+    const parts = [];
+    for (const msg of messages || []) {
+        if (Array.isArray(msg.content)) {
+            for (const part of msg.content) {
+                if (part && part.type === 'text' && part.text) {
+                    parts.push(part.text);
+                }
+            }
+        } else if (typeof msg.content === 'string' && msg.content) {
+            parts.push(msg.content);
+        }
+    }
+    return parts.join('\n\n');
+}
+
+function parseImagesResponse(json) {
+    const item = json && Array.isArray(json.data) ? json.data[0] : null;
+    return { b64: (item && item.b64_json) || null, url: (item && item.url) || null };
+}
+
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https://linkapi.ai' }) {
+    const url = `${host}/v1/images/generations`;
+    // Direct browser -> LinkAPI request (does NOT pass through the ST server, so
+    // it appears in the browser console/Network tab, not the ST server terminal).
+    console.log(`[${extensionName}] LinkAPI image request:`, { url, model, size, promptLength: (prompt || '').length });
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey || ''}`,
+        },
+        body: JSON.stringify({ model, prompt, n: 1, size, response_format: 'b64_json' }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[${extensionName}] LinkAPI image error (${response.status}):`, errorText);
+        let message = `API Error: ${response.status}`;
+        try {
+            const j = JSON.parse(errorText);
+            message = j.error?.message || j.message || message;
+        } catch (e) { /* keep default */ }
+        throw new Error(message);
+    }
+
+    const json = await response.json();
+    const { b64, url: imageUrl } = parseImagesResponse(json);
+    if (b64) {
+        console.log(`[${extensionName}] LinkAPI image received (b64_json, model: ${model})`);
+        return { imageData: b64, mimeType: 'image/png' };
+    }
+    if (imageUrl) {
+        console.log(`[${extensionName}] LinkAPI image received (url, fetching bytes, model: ${model})`);
+        const imgResp = await fetch(imageUrl);
+        const buf = await imgResp.arrayBuffer();
+        return { imageData: arrayBufferToBase64(buf), mimeType: 'image/png' };
+    }
+    throw new Error('No image was returned by the API');
+}
+
+async function fetchLinkApiModels() {
+    const settings = extension_settings[extensionName];
+    const key = settings.linkapi_key;
+    if (!key) {
+        toastr.warning('Enter a LinkAPI key first.', 'Context Image Generation');
+        return;
+    }
+    try {
+        const resp = await fetch('https://linkapi.ai/v1/models', {
+            headers: { 'Authorization': `Bearer ${key}` },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        const ids = (json.data || [])
+            .map(m => m.id)
+            .filter(id => /^(gpt-image|dall-e)/i.test(id));
+        fetchedLinkApiModels = ids.map(id => ({ id, name: id }));
+        updateModelDropdown();
+        toastr.success(`Loaded ${ids.length} image model(s).`, 'Context Image Generation');
+    } catch (e) {
+        console.error(`[${extensionName}] Fetch models failed:`, e);
+        toastr.error(`Failed to fetch models: ${e.message}`, 'Context Image Generation');
+    }
+}
+
+// Dev aid: reach the pure helpers from the DevTools console for verification.
+window.cigDebug = Object.assign(window.cigDebug || {}, {
+    isOpenAiImageModel,
+    mapAspectRatioToSize,
+    extractPromptText,
+    parseImagesResponse,
+    requestLinkApiImage,
+});
+
 function updateModelDropdown() {
     const settings = extension_settings[extensionName];
     const provider = settings.provider || 'makersuite';
@@ -75,13 +205,41 @@ function updateModelDropdown() {
     const $modelSelect = $('#cig_model');
     $modelSelect.empty();
 
-    $modelSelect.append(`<option value="${models.flash.id}">${models.flash.name}</option>`);
-    $modelSelect.append(`<option value="${models.flash2.id}">${models.flash2.name}</option>`);
-    $modelSelect.append(`<option value="${models.pro.id}">${models.pro.name}</option>`);
+    // Build options via DOM construction (not string interpolation) so ids/names
+    // from the LinkAPI /v1/models response cannot break the markup. `seen`
+    // dedupes without an attribute selector (which a quote in an id would break).
+    const seen = new Set();
+    const addOption = (id, name) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        $modelSelect.append($('<option>').val(id).text(name));
+    };
 
-    // Try to maintain model type selection when switching providers
+    for (const m of Object.values(models)) {
+        addOption(m.id, m.name);
+    }
+
+    // Merge dynamically fetched LinkAPI image models (runtime only).
+    if (provider === 'linkapi' && Array.isArray(fetchedLinkApiModels)) {
+        for (const m of fetchedLinkApiModels) {
+            addOption(m.id, m.name);
+        }
+    }
+
+    // Preserve a previously selected gpt-image/dall-e model across reloads:
+    // fetchedLinkApiModels is runtime-only and empty after a reload, so without
+    // this a fetched model would silently fall back to a Gemini model below.
+    if (provider === 'linkapi' && isOpenAiImageModel(settings.model)) {
+        addOption(settings.model, settings.model);
+    }
+
+    // Keep the exact current model if it is still available; otherwise fall back
+    // to the closest type match (preserves cross-provider switching behaviour).
+    const optionValues = Array.from(seen);
     const currentModel = settings.model || '';
-    if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
+    if (optionValues.includes(currentModel)) {
+        $modelSelect.val(currentModel);
+    } else if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
         $modelSelect.val(models.pro.id);
         settings.model = models.pro.id;
     } else if (currentModel.includes('3.1') || currentModel.includes('3-1')) {
@@ -92,7 +250,6 @@ function updateModelDropdown() {
         settings.model = models.flash.id;
     }
 
-    // Update size dropdown based on selected model
     if (typeof toggleImageSizeVisibility === 'function') {
         toggleImageSizeVisibility();
     }
@@ -139,6 +296,7 @@ function toggleImageSizeVisibility() {
     const isSizeSupported = isProModel || isFlash2Model;
     $('#cig_image_size_container').toggle(isSizeSupported);
     $('#cig_flash2_options').toggle(isFlash2Model);
+    $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
 
     if (isSizeSupported) {
         updateSizeDropdown(model, isFlash2Model);
@@ -356,6 +514,17 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const isFlash2 = /gemini-3\.1/.test(settings.model);
     const selectedProvider = settings.provider || 'makersuite';
     const isLinkApi = selectedProvider === 'linkapi';
+
+    // ChatGPT (gpt-image) via LinkAPI: direct fetch, text prompt only.
+    if (isLinkApi && isOpenAiImageModel(settings.model)) {
+        console.log(`[${extensionName}] Generating via LinkAPI images endpoint, model:`, settings.model);
+        return await requestLinkApiImage({
+            apiKey: settings.linkapi_key,
+            model: settings.model,
+            prompt: extractPromptText(messages),
+            size: mapAspectRatioToSize(settings.aspect_ratio),
+        });
+    }
 
     const requestBody = {
         chat_completion_source: isLinkApi ? 'makersuite' : selectedProvider,
@@ -740,6 +909,8 @@ jQuery(async () => {
         extension_settings[extensionName].linkapi_key = $(this).val();
         saveSettingsDebounced();
     });
+
+    $('#cig_fetch_linkapi_models').on('click', fetchLinkApiModels);
 
     $('#cig_model').on('change', function () {
         extension_settings[extensionName].model = $(this).val();

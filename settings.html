@@ -31,6 +31,9 @@
                 <label for="cig_linkapi_key">LinkAPI Key</label>
                 <input id="cig_linkapi_key" class="cig-setting text_pole" type="password" placeholder="sk-..." />
                 <small>Used only for image generation. Gemini proxy URL: https://api.linkapi.ai (do not add /v1).</small>
+                <div class="flex-container" style="margin-top: 5px;">
+                    <input id="cig_fetch_linkapi_models" class="menu_button" type="button" value="🔄 Fetch models" />
+                </div>
             </div>
 
             <!-- Model Selection -->
@@ -40,6 +43,9 @@
                     <select id="cig_model" class="cig-setting">
                         <!-- Populated dynamically based on provider -->
                     </select>
+                    <small id="cig_chatgpt_note" style="display: none; opacity: 0.8;">
+                        ChatGPT models: text prompt only — avatar/reference images are not supported.
+                    </small>
                 </div>
             </div>
 
