@@ -198,22 +198,37 @@ function updateModelDropdown() {
     const $modelSelect = $('#cig_model');
     $modelSelect.empty();
 
+    // Build options via DOM construction (not string interpolation) so ids/names
+    // from the LinkAPI /v1/models response cannot break the markup. `seen`
+    // dedupes without an attribute selector (which a quote in an id would break).
+    const seen = new Set();
+    const addOption = (id, name) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        $modelSelect.append($('<option>').val(id).text(name));
+    };
+
     for (const m of Object.values(models)) {
-        $modelSelect.append(`<option value="${m.id}">${m.name}</option>`);
+        addOption(m.id, m.name);
     }
 
     // Merge dynamically fetched LinkAPI image models (runtime only).
     if (provider === 'linkapi' && Array.isArray(fetchedLinkApiModels)) {
         for (const m of fetchedLinkApiModels) {
-            if (!$modelSelect.find(`option[value="${m.id}"]`).length) {
-                $modelSelect.append(`<option value="${m.id}">${m.name}</option>`);
-            }
+            addOption(m.id, m.name);
         }
+    }
+
+    // Preserve a previously selected gpt-image/dall-e model across reloads:
+    // fetchedLinkApiModels is runtime-only and empty after a reload, so without
+    // this a fetched model would silently fall back to a Gemini model below.
+    if (provider === 'linkapi' && isOpenAiImageModel(settings.model)) {
+        addOption(settings.model, settings.model);
     }
 
     // Keep the exact current model if it is still available; otherwise fall back
     // to the closest type match (preserves cross-provider switching behaviour).
-    const optionValues = $modelSelect.find('option').map((i, o) => o.value).get();
+    const optionValues = Array.from(seen);
     const currentModel = settings.model || '';
     if (optionValues.includes(currentModel)) {
         $modelSelect.val(currentModel);
